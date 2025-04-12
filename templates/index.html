@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Crypto Data Downloader</title>
+
+    <!-- 1. Link Pico.css -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+
+    <!-- 2. Link Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+    <!-- 3. Link your custom style.css (AFTER Pico/Flatpickr) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <!-- Optional: Add custom theme for Flatpickr -->
+    <!-- <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/material_blue.css"> -->
+
+</head>
+<body>
+
+    <!-- Wrap content in a main container -->
+    <main class="container">
+
+        <h1>Crypto Data Downloader</h1>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="post">
+            <label for="exchange">Exchange:</label>
+            <select id="exchange" name="exchange" required>
+                {% for ex in exchanges %}
+                    <option value="{{ ex }}" {% if ex == 'binance' %}selected{% endif %}>{{ ex|capitalize }}</option>
+                {% endfor %}
+                <option value="">--Other (Type Below)--</option>
+            </select>
+            <input type="text" id="exchange_other" name="exchange_other" placeholder="Enter exchange ID if not listed">
+            <small>Select from list or type ID if not present.</small>
+
+
+            <label for="symbol">Crypto Pair (e.g., BTC/USDT):</label>
+            <input type="text" id="symbol" name="symbol" required placeholder="BTC/USDT">
+
+            <!-- Use grid for dates -->
+            <div class="grid">
+                <div>
+                    <label for="start_date">Start Date:</label>
+                    <!-- Change type to text, add flatpickr class/id -->
+                    <input type="text" id="start_date_picker" class="flatpickr-input" name="start_date" required placeholder="Select Start Date...">
+                </div>
+                <div>
+                    <label for="end_date">End Date:</label>
+                    <!-- Change type to text, add flatpickr class/id -->
+                    <input type="text" id="end_date_picker" class="flatpickr-input" name="end_date" required placeholder="Select End Date...">
+                </div>
+            </div>
+
+            <label for="timeframe">Timeframe:</label>
+            <select id="timeframe" name="timeframe">
+                <option value="1d" selected>1 Day (1d)</option>
+                <option value="1h">1 Hour (1h)</option>
+                <option value="4h">4 Hours (4h)</option>
+                <option value="1w">1 Week (1w)</option>
+                <option value="1M">1 Month (1M)</option>
+                 <option value="5m">5 Minutes (5m)</option>
+                 <option value="15m">15 Minutes (15m)</option>
+                 <option value="30m">30 Minutes (30m)</option>
+            </select>
+
+            <label for="format">Download Format:</label>
+            <select id="format" name="format">
+                <option value="excel" selected>Excel (.xlsx)</option>
+                <option value="txt">Text (.txt, Tab-separated)</option>
+            </select>
+
+            <button type="submit">Fetch and Download Data</button>
+        </form>
+
+    </main> <!-- End of main container -->
+
+    <!-- 4. Include Flatpickr JavaScript (before your custom script) -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+    <!-- 5. Custom JavaScript for Exchange and Flatpickr Initialization -->
+    <script>
+        // Exchange selection logic (keep as before)
+        const exchangeSelect = document.getElementById('exchange');
+        const exchangeOtherInput = document.getElementById('exchange_other');
+        const handleExchangeChange = function() {
+            if (exchangeSelect.value === '') {
+                exchangeOtherInput.name = 'exchange';
+                exchangeSelect.name = 'exchange_select_disabled';
+                exchangeOtherInput.required = true;
+            } else {
+                exchangeOtherInput.name = 'exchange_other';
+                exchangeSelect.name = 'exchange';
+                exchangeOtherInput.required = false;
+            }
+        };
+        exchangeSelect.addEventListener('change', handleExchangeChange);
+        handleExchangeChange(); // Run on load
+
+        // Initialize Flatpickr
+        document.addEventListener('DOMContentLoaded', function() {
+            // Common options
+            const commonOptions = {
+                altInput: true, // Show a user-friendly format, but submit standard YYYY-MM-DD
+                altFormat: "F j, Y", // How the date looks in the input field (e.g., "March 10, 2024")
+                dateFormat: "Y-m-d", // The format sent to the server (MUST be YYYY-MM-DD for our Python code)
+                allowInput: true, // Allow typing directly into the field
+                // maxDate: "today" // Optionally prevent selecting future dates
+            };
+
+            // Initialize Start Date picker
+            const startDatePicker = flatpickr("#start_date_picker", {
+                ...commonOptions, // Spread common options
+                // Specific options for start date if needed
+                 maxDate: new Date().fp_incr(0) // Prevent future dates including today if needed
+            });
+
+            // Initialize End Date picker
+            const endDatePicker = flatpickr("#end_date_picker", {
+                 ...commonOptions, // Spread common options
+                 minDate: "today", // Default minDate for end_date
+                 maxDate: new Date().fp_incr(0) // Prevent future dates including today if needed
+
+            });
+
+             // Link Start and End Dates (optional but good UX)
+             // When start date changes, set the minimum date for the end date picker
+             startDatePicker.config.onChange.push(function(selectedDates) {
+                 if (selectedDates[0]) {
+                      endDatePicker.set('minDate', selectedDates[0]);
+                 }
+             });
+
+             // When end date changes, set the maximum date for the start date picker
+            //  endDatePicker.config.onChange.push(function(selectedDates) {
+            //      if (selectedDates[0]) {
+            //           startDatePicker.set('maxDate', selectedDates[0]);
+            //      }
+            //  });
+
+             // Set initial minimum for end date if start date already has value (e.g. on page reload with errors)
+             if (startDatePicker.selectedDates[0]) {
+                   endDatePicker.set('minDate', startDatePicker.selectedDates[0]);
+             }
+             // Set initial maximum for start date if end date already has value
+            //  if (endDatePicker.selectedDates[0]) {
+            //        startDatePicker.set('maxDate', endDatePicker.selectedDates[0]);
+            //  }
+        });
+    </script>
+
+</body>
+</html>

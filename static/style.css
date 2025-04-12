@@ -1,0 +1,128 @@
+/* static/style.css */
+
+/* --- Variables for easier customization --- */
+:root {
+    --primary-color: #007bff; /* Blue accent */
+    --primary-hover-color: #0056b3;
+    --success-bg: #d1e7dd;
+    --success-border: #a3cfbb;
+    --success-text: #0f5132;
+    --warning-bg: #fff3cd;
+    --warning-border: #ffe69c;
+    --warning-text: #664d03;
+    --error-bg: #f8d7da;
+    --error-border: #f5c6cb;
+    --error-text: #842029;
+    --container-max-width: 700px; /* Max width of the main content */
+    --container-padding: 2rem;
+}
+
+/* Apply Pico's dark theme automatically based on OS preference */
+/* Remove this section if you only want light mode */
+/* @media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --primary-color: #2589f5;
+    --primary-hover-color: #50a1f7;
+    --success-bg: #052a15;
+    --success-border: #105a31;
+    --success-text: #a3cfbb;
+    --warning-bg: #332701;
+    --warning-border: #856404;
+    --warning-text: #ffecb5;
+    --error-bg: #3b0d12;
+    --error-border: #842029;
+    --error-text: #f5c2c7;
+  }
+} */
+
+
+/* --- General Layout --- */
+body {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+main.container {
+    max-width: var(--container-max-width);
+    margin: auto;
+    padding: var(--container-padding);
+    background-color: var(--card-background-color); /* Pico variable */
+    border: 1px solid var(--card-border-color); /* Pico variable */
+    border-radius: var(--border-radius); /* Pico variable */
+    box-shadow: var(--card-box-shadow); /* Pico variable */
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: var(--primary); /* Pico variable */
+}
+
+/* --- Form Styling --- */
+form label {
+    font-weight: bold;
+    margin-bottom: 0.3rem;
+    display: block; /* Ensure labels are block elements */
+}
+
+form input[type=text],
+form input[type=date],
+form select {
+    margin-bottom: 1rem; /* Consistent bottom margin */
+}
+
+/* Style the submit button */
+form button[type=submit] {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    width: 100%; /* Make button full width */
+    padding: 0.75rem; /* Slightly larger padding */
+    font-size: 1.1em;
+    margin-top: 1.5rem; /* Space above button */
+}
+
+form button[type=submit]:hover {
+    background-color: var(--primary-hover-color);
+    border-color: var(--primary-hover-color);
+}
+
+/* Style for the hidden exchange text input */
+#exchange_other {
+    margin-top: -0.5rem; /* Reduce space when it appears */
+    margin-bottom: 0.9rem;
+}
+small {
+    display: block;
+    margin-top: -0.8rem; /* Adjust spacing for the small text */
+    margin-bottom: 1rem;
+    font-size: 0.85em;
+    color: var(--muted-color); /* Pico variable */
+}
+
+
+/* --- Flash Messages Styling --- */
+.flash {
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius); /* Pico variable */
+    text-align: center;
+}
+
+.flash.error {
+    color: var(--error-text);
+    background-color: var(--error-bg);
+    border-color: var(--error-border);
+}
+
+.flash.success {
+    color: var(--success-text);
+    background-color: var(--success-bg);
+    border-color: var(--success-border);
+}
+
+.flash.warning {
+    color: var(--warning-text);
+    background-color: var(--warning-bg);
+    border-color: var(--warning-border);
+}
