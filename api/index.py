@@ -19,10 +19,10 @@ app = Flask(__name__)
 
 # Required for flashing messages
 # IMPORTANT: Generate your own random secret key for production!
-# You can use Python's os.urandom(24) to generate one in a Python console.
-app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
+app.secret_key = b'_5#y2L"F4Q8z\n\xec]/' 
 
 # --- Data Fetching Function (fetch_crypto_ohlcv - No Changes Needed Inside) ---
+# (Keep the function exactly as it was in the previous "full code" response)
 def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binance', timeframe='1d'):
     """Fetches crypto OHLCV data using ccxt. Returns DataFrame or None."""
     app.logger.info(f"Attempting fetch: {exchange_id} - {symbol} - {timeframe} - {start_date_str} to {end_date_str}")
@@ -77,7 +77,6 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
                 timeframe_duration_ms = exchange.parse_timeframe(timeframe) * 1000
                 since = last_timestamp + timeframe_duration_ms
                 if exchange.rateLimit: time.sleep(exchange.rateLimit / 1000)
-                # Optimization: Check if the *start* of the last fetched candle is already past the end date
                 if last_timestamp >= end_dt_filter.timestamp() * 1000 + timeframe_duration_ms:
                     app.logger.info("Fetched past desired end date.")
                     break
@@ -93,9 +92,8 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
         df.drop_duplicates(subset=['Timestamp'], keep='first', inplace=True)
         df['Date'] = pd.to_datetime(df['Timestamp'], unit='ms', utc=True)
 
-        start_dt_compare = datetime.strptime(start_date_str, '%Y-%m-%d').date() # Compare dates only
+        start_dt_compare = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_dt_compare = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-        # Ensure filtering happens correctly with dates
         df = df[(df['Date'].dt.date >= start_dt_compare) & (df['Date'].dt.date <= end_dt_compare)]
 
         if df.empty: flash(f"No data matched the date range {start_date_str} to {end_date_str}.", "warning"); return df
@@ -103,8 +101,8 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
         df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
         df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
         df[['Open', 'High', 'Low', 'Close', 'Volume']] = df[['Open', 'High', 'Low', 'Close', 'Volume']].apply(pd.to_numeric, errors='coerce')
-        df['Volume'] = df['Volume'].astype('Float64') # Use Float64 for potential NaNs
-        df.sort_values(by='Date', inplace=True) # Ensure final sort by date string
+        df['Volume'] = df['Volume'].astype('Float64')
+        df.sort_values(by='Date', inplace=True)
 
         app.logger.info(f"Successfully processed {len(df)} crypto data points.")
         return df
@@ -113,13 +111,19 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
         app.logger.error(f"Overall error in fetch_crypto_ohlcv: {e}")
         return None
 
-# --- Flask Routes (No Changes Needed Inside) ---
+# --- Flask Routes ---
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     app.logger.info(f"Request Method: {request.method}") # Log request method
     try:
-        if request.method == 'POST':
+        # --- TEMPORARILY BYPASS TEMPLATE RENDERING FOR GET REQUEST ---
+        if request.method == 'GET':
+             app.logger.info("Handling GET request - Returning simple text for debugging.")
+             return "Hello from Vercel Flask App! (Debug Mode)" # Return plain text directly
+
+        # --- Handle POST request logic ---
+        elif request.method == 'POST':
             app.logger.info("Handling POST request")
             # --- Get form data ---
             exchange_id = request.form.get('exchange', 'binance').strip().lower()
@@ -152,7 +156,9 @@ def index():
 
             if errors:
                 app.logger.warning("Form validation failed.")
-                return redirect(url_for('index')) # Redirect back to form
+                # Instead of redirecting, maybe return an error response directly for POST errors
+                # For now, keeping redirect to show flash message on GET
+                return redirect(url_for('index'))
 
             # --- Fetch data ---
             df = fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id, timeframe)
@@ -160,20 +166,15 @@ def index():
             # --- Prepare and Send File ---
             if df is None:
                 app.logger.error("fetch_crypto_ohlcv returned None.")
-                # Error already flashed by fetch function
                 return redirect(url_for('index'))
             elif df.empty:
                  app.logger.warning("fetch_crypto_ohlcv returned empty DataFrame.")
-                 # Message already flashed by fetch function
                  return redirect(url_for('index'))
             else:
                 try:
                     app.logger.info(f"Preparing file for download ({download_format})...")
-                    # Create filename
                     safe_symbol = symbol.replace('/', '_')
                     filename = f"{safe_symbol}_{exchange_id}_{start_date_str}_to_{end_date_str}_{timeframe}.{download_format if download_format == 'txt' else 'xlsx'}"
-
-                    # Create in-memory buffer
                     output_buffer = io.BytesIO()
 
                     if download_format == 'excel':
@@ -192,7 +193,8 @@ def index():
                          app.logger.error(f"Invalid download format: {download_format}")
                          return redirect(url_for('index'))
 
-                    flash(f"Data fetched successfully for {symbol}. Preparing download...", "success")
+                    # Don't flash message here as it won't be seen before download starts
+                    # flash(f"Data fetched successfully for {symbol}. Preparing download...", "success")
                     app.logger.info(f"Sending file: {filename}, mimetype: {mimetype}")
                     return send_file(
                         output_buffer,
@@ -206,29 +208,21 @@ def index():
                     app.logger.error(f"Error preparing file: {e}")
                     return redirect(url_for('index'))
 
-        # --- Handle GET request (Display Form) ---
-        app.logger.info("Handling GET request, rendering template.")
-        common_exchanges = ['binance', 'kraken', 'bybit', 'coinbase', 'kucoin', 'okx', 'gateio', 'bitget']
-        return render_template('index.html', exchanges=common_exchanges)
+        # Fallback for methods other than GET/POST (e.g., PUT, DELETE)
+        app.logger.warning(f"Unhandled request method: {request.method}")
+        return "Method Not Allowed", 405
 
     except Exception as route_exception:
         # Catch-all for any unexpected error within the route handler
         app.logger.error(f"Unhandled Exception in '/' route: {route_exception}", exc_info=True) # Log full traceback
-        flash("An unexpected server error occurred. Please try again later.", "error")
-        # Render a generic error template or redirect to home
-        # For simplicity, redirecting home, but a dedicated error page is better practice.
-        # return render_template('error.html'), 500
-        return redirect(url_for('index'))
+        flash("An unexpected server error occurred. Please check logs.", "error")
+        # In production, you'd ideally have a proper error page
+        # For debugging, returning error text might be useful, but redirect is safer for user
+        # return f"Internal Server Error: {route_exception}", 500
+        return redirect(url_for('index')) # Redirect home on general errors
 
 
-# --- Run the App section (FOR LOCAL TESTING ONLY) ---
-# This block is NOT used by Vercel / Gunicorn / Waitress
-# Only runs if you execute 'python api/index.py' directly
-if __name__ == '__main__':
-   print("--- Running Flask App Locally for Testing ---")
-   # Print the calculated paths Flask *might* use by default
-   print(f"App Root Path: {app.root_path}")
-   print(f"Default Template Path convention: {os.path.join(app.root_path, 'templates')}") # This might not be what it actually uses if run from parent dir
-   print(f"Default Static Path convention: {os.path.join(app.root_path, 'static')}")
-   print("Access at: http://127.0.0.1:5000 (or the port specified)")
-   app.run(debug=True, host='0.0.0.0', port=5000)
+# --- Run the App section (REMOVE or KEEP COMMENTED OUT for Vercel) ---
+# if __name__ == '__main__':
+#    print("--- Running Flask App Locally for Testing ---")
+#    app.run(debug=True, host='0.0.0.0', port=5000)
