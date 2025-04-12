@@ -19,10 +19,10 @@ app = Flask(__name__)
 
 # Required for flashing messages
 # IMPORTANT: Generate your own random secret key for production!
-app.secret_key = b'_5#y2L"F4Q8z\n\xec]/' 
+# You can use Python's os.urandom(24) to generate one in a Python console.
+app.secret_key = b'_CHANGE_THIS_TO_YOUR_OWN_RANDOM_BYTES_\xec]/'
 
-# --- Data Fetching Function (fetch_crypto_ohlcv - No Changes Needed Inside) ---
-# (Keep the function exactly as it was in the previous "full code" response)
+# --- Data Fetching Function (fetch_crypto_ohlcv - No Changes) ---
 def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binance', timeframe='1d'):
     """Fetches crypto OHLCV data using ccxt. Returns DataFrame or None."""
     app.logger.info(f"Attempting fetch: {exchange_id} - {symbol} - {timeframe} - {start_date_str} to {end_date_str}")
@@ -115,15 +115,9 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    app.logger.info(f"Request Method: {request.method}") # Log request method
+    app.logger.info(f"Request Method: {request.method}")
     try:
-        # --- TEMPORARILY BYPASS TEMPLATE RENDERING FOR GET REQUEST ---
-        if request.method == 'GET':
-             app.logger.info("Handling GET request - Returning simple text for debugging.")
-             return "Hello from Vercel Flask App! (Debug Mode)" # Return plain text directly
-
-        # --- Handle POST request logic ---
-        elif request.method == 'POST':
+        if request.method == 'POST':
             app.logger.info("Handling POST request")
             # --- Get form data ---
             exchange_id = request.form.get('exchange', 'binance').strip().lower()
@@ -156,9 +150,7 @@ def index():
 
             if errors:
                 app.logger.warning("Form validation failed.")
-                # Instead of redirecting, maybe return an error response directly for POST errors
-                # For now, keeping redirect to show flash message on GET
-                return redirect(url_for('index'))
+                return redirect(url_for('index')) # Redirect back to form with flash messages
 
             # --- Fetch data ---
             df = fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id, timeframe)
@@ -166,9 +158,11 @@ def index():
             # --- Prepare and Send File ---
             if df is None:
                 app.logger.error("fetch_crypto_ohlcv returned None.")
+                # Error likely already flashed by fetch function
                 return redirect(url_for('index'))
             elif df.empty:
                  app.logger.warning("fetch_crypto_ohlcv returned empty DataFrame.")
+                 # Message likely already flashed by fetch function
                  return redirect(url_for('index'))
             else:
                 try:
@@ -193,8 +187,7 @@ def index():
                          app.logger.error(f"Invalid download format: {download_format}")
                          return redirect(url_for('index'))
 
-                    # Don't flash message here as it won't be seen before download starts
-                    # flash(f"Data fetched successfully for {symbol}. Preparing download...", "success")
+                    # flash(f"Data fetched successfully for {symbol}. Preparing download...", "success") # Flashing before send_file doesn't work well
                     app.logger.info(f"Sending file: {filename}, mimetype: {mimetype}")
                     return send_file(
                         output_buffer,
@@ -208,21 +201,26 @@ def index():
                     app.logger.error(f"Error preparing file: {e}")
                     return redirect(url_for('index'))
 
-        # Fallback for methods other than GET/POST (e.g., PUT, DELETE)
-        app.logger.warning(f"Unhandled request method: {request.method}")
-        return "Method Not Allowed", 405
+        # --- Handle GET request (Display Form) ---
+        elif request.method == 'GET':
+            app.logger.info("Handling GET request, rendering template.")
+            common_exchanges = ['binance', 'kraken', 'bybit', 'coinbase', 'kucoin', 'okx', 'gateio', 'bitget']
+            # Render the actual HTML page now
+            return render_template('index.html', exchanges=common_exchanges)
+
+        # Fallback for methods other than GET/POST
+        else:
+            app.logger.warning(f"Unhandled request method: {request.method}")
+            return "Method Not Allowed", 405
 
     except Exception as route_exception:
         # Catch-all for any unexpected error within the route handler
-        app.logger.error(f"Unhandled Exception in '/' route: {route_exception}", exc_info=True) # Log full traceback
-        flash("An unexpected server error occurred. Please check logs.", "error")
-        # In production, you'd ideally have a proper error page
-        # For debugging, returning error text might be useful, but redirect is safer for user
-        # return f"Internal Server Error: {route_exception}", 500
+        app.logger.error(f"Unhandled Exception in '/' route: {route_exception}", exc_info=True)
+        flash("An unexpected server error occurred. Please check server logs.", "error")
         return redirect(url_for('index')) # Redirect home on general errors
 
 
-# --- Run the App section (REMOVE or KEEP COMMENTED OUT for Vercel) ---
+# --- Run the App section (FOR LOCAL TESTING ONLY) ---
 # if __name__ == '__main__':
 #    print("--- Running Flask App Locally for Testing ---")
 #    app.run(debug=True, host='0.0.0.0', port=5000)
