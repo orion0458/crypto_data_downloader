@@ -20,7 +20,7 @@ app = Flask(__name__)
 # Required for flashing messages
 # IMPORTANT: Generate your own random secret key for production!
 # Example using Python console: import os; print(os.urandom(24))
-app.secret_key = b'_CHANGE_THIS_TO_YOUR_OWN_RANDOM_BYTES_\xec]/' # Replace with your actual key
+app.secret_key = b'\x92=\xe66\x95d!Y\xe3\x16\\\xd5\xbd\x17\xbf\xc4\xef\x84\xcc\x17\t\xe8z\xed' # Replace with your actual key
 
 # --- Data Fetching Function (fetch_crypto_ohlcv - No Changes Needed Inside) ---
 def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binance', timeframe='1d'):
