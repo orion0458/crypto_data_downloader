@@ -7,27 +7,52 @@ import sys
 import warnings
 import time
 import io # For sending file from memory
-import os
+import os # Import os module
 
 # Suppress specific PerformanceWarnings from openpyxl if they appear
 warnings.filterwarnings("ignore", category=UserWarning, module='openpyxl')
 
-# --- Initialize Flask App (Simple Initialization) ---
-# Gunicorn/Render will find templates/static relative to the project root
-# based on where the WSGI entry point (api.index:app) is called from.
-app = Flask(__name__)
+# --- Initialize Flask App ---
+
+# Get the absolute path of the directory the script is in (api/)
+# __file__ gives the path of the current script (api/index.py)
+# Use os.path.realpath to resolve any symbolic links in the path
+script_dir = os.path.dirname(os.path.realpath(__file__))
+
+# Construct absolute paths to templates and static folders
+# Assuming templates/static are one level UP from the 'api' directory
+template_dir = os.path.join(script_dir, '..', 'templates')
+static_dir = os.path.join(script_dir, '..', 'static')
+
+# Use os.path.abspath to ensure we have a clean, absolute path
+absolute_template_dir = os.path.abspath(template_dir)
+absolute_static_dir = os.path.abspath(static_dir)
+
+# Create the Flask app instance, explicitly providing the folder paths
+app = Flask(__name__,
+            template_folder=absolute_template_dir,
+            static_folder=absolute_static_dir)
 
 # Required for flashing messages
-# IMPORTANT: Generate your own random secret key for production!
-# Example using Python console: import os; print(os.urandom(24))
+# IMPORTANT: Generate your own random secret key! Use: import os; print(os.urandom(24))
 app.secret_key = b'\x92=\xe66\x95d!Y\xe3\x16\\\xd5\xbd\x17\xbf\xc4\xef\x84\xcc\x17\t\xe8z\xed' # Replace with your actual key
+
+# --- Add Debug Logging for Paths ---
+# Log the paths Flask is configured to use right after initialization
+# These logs will appear in the Render deployment logs during startup.
+app.logger.info(f"Initialized Flask App.")
+app.logger.info(f"Script Directory (__file__): {script_dir}")
+app.logger.info(f"Calculated Template Folder: {absolute_template_dir}")
+app.logger.info(f"Calculated Static Folder: {absolute_static_dir}")
+app.logger.info(f"Flask Instance Template Folder: {app.template_folder}")
+app.logger.info(f"Flask Instance Static Folder: {app.static_folder}")
+
 
 # --- Data Fetching Function (fetch_crypto_ohlcv - No Changes Needed Inside) ---
 def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binance', timeframe='1d'):
     """Fetches crypto OHLCV data using ccxt. Returns DataFrame or None."""
     app.logger.info(f"Attempting fetch: {exchange_id} - {symbol} - {timeframe} - {start_date_str} to {end_date_str}")
     try:
-        # Using app.logger for logging within Flask context
         app.logger.info(f"Connecting to crypto exchange: {exchange_id}...")
         try:
             exchange_class = getattr(ccxt, exchange_id)
@@ -68,7 +93,6 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
         app.logger.info(f"Fetching {timeframe} crypto OHLCV data for {symbol_upper}...")
 
         while since < end_timestamp_ms:
-            # Use app.logger for logging within Flask context
             app.logger.debug(f"Fetching batch since {datetime.fromtimestamp(since / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
             try:
                 ohlcv = exchange.fetch_ohlcv(symbol_upper, timeframe, since, limit)
@@ -85,7 +109,7 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
             except ccxt.NetworkError as e: app.logger.warning(f"Network error: {e}. Retrying after 10s..."); time.sleep(10)
             except ccxt.RequestTimeout as e: app.logger.warning(f"Request Timeout: {e}. Retrying after 30s..."); time.sleep(30)
             except ccxt.ExchangeError as e: flash(f"Exchange error during fetch: {e}. Stopping fetch.", "error"); app.logger.error(f"Exchange error: {e}"); break
-            except Exception as e: flash(f"Unexpected fetch error: {e}", "error"); app.logger.error(f"Unexpected fetch error: {e}"); return None
+            except Exception as e: flash(f"Unexpected fetch error: {e}", "error"); app.logger.error(f"Unexpected fetch error: {e}", exc_info=True); return None # Log traceback
 
         if not all_ohlcv: flash(f"No crypto data collected for {symbol_upper}.", "warning"); return pd.DataFrame()
 
@@ -116,7 +140,6 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # Use app.logger for logging within Flask context
     app.logger.debug(f"Request Method: {request.method} for route '/'")
     try:
         if request.method == 'POST':
@@ -139,7 +162,6 @@ def index():
             # --- Basic Validation ---
             errors = False
             if not exchange_id: flash("Exchange ID is required.", "error"); errors = True
-            # Slightly stricter symbol validation
             if not symbol or "/" not in symbol or len(symbol.split('/')) != 2 or not symbol.split('/')[0] or not symbol.split('/')[1]:
                  flash("Symbol must be in BASE/QUOTE format (e.g., BTC/USDT).", "error"); errors = True
             if not start_date_str: flash("Start Date is required.", "error"); errors = True
@@ -201,9 +223,17 @@ def index():
 
         # --- Handle GET request (Display Form) ---
         elif request.method == 'GET':
-            app.logger.info("Handling GET request, rendering template.")
+            app.logger.info("Handling GET request, attempting to render template.")
             common_exchanges = ['binance', 'kraken', 'bybit', 'coinbase', 'kucoin', 'okx', 'gateio', 'bitget']
-            return render_template('index.html', exchanges=common_exchanges) # Render the HTML form
+            try:
+                # This is the call that was failing
+                return render_template('index.html', exchanges=common_exchanges)
+            except Exception as render_error:
+                # Log the specific error during rendering
+                app.logger.error(f"Error during render_template: {render_error}", exc_info=True)
+                flash("Error loading page template. Check server logs.", "error")
+                # Return a simple error message or redirect
+                return "Internal Server Error: Could not load template.", 500
 
         # Fallback for methods other than GET/POST
         else:
@@ -220,5 +250,7 @@ def index():
 # --- Run the App section (FOR LOCAL TESTING ONLY, NOT USED BY RENDER/GUNICORN) ---
 # if __name__ == '__main__':
 #    print("--- Running Flask App Locally for Testing ---")
-#    # Set debug=False if testing Gunicorn setup locally
+#    print(f"Script Directory: {os.path.dirname(os.path.realpath(__file__))}")
+#    print(f"Template Folder Setting: {app.template_folder}")
+#    print(f"Static Folder Setting: {app.static_folder}")
 #    app.run(debug=True, host='0.0.0.0', port=5000)
