@@ -7,26 +7,27 @@ import sys
 import warnings
 import time
 import io # For sending file from memory
-import os # Keep os import if needed elsewhere
+import os
 
 # Suppress specific PerformanceWarnings from openpyxl if they appear
 warnings.filterwarnings("ignore", category=UserWarning, module='openpyxl')
 
-# --- Initialize Flask App (Simplified for Vercel) ---
-# Let Flask and Vercel likely find templates/static relative to project root by default,
-# even though this script is in api/
+# --- Initialize Flask App (Simple Initialization) ---
+# Gunicorn/Render will find templates/static relative to the project root
+# based on where the WSGI entry point (api.index:app) is called from.
 app = Flask(__name__)
 
 # Required for flashing messages
 # IMPORTANT: Generate your own random secret key for production!
-# You can use Python's os.urandom(24) to generate one in a Python console.
-app.secret_key = b'_CHANGE_THIS_TO_YOUR_OWN_RANDOM_BYTES_\xec]/'
+# Example using Python console: import os; print(os.urandom(24))
+app.secret_key = b'_CHANGE_THIS_TO_YOUR_OWN_RANDOM_BYTES_\xec]/' # Replace with your actual key
 
-# --- Data Fetching Function (fetch_crypto_ohlcv - No Changes) ---
+# --- Data Fetching Function (fetch_crypto_ohlcv - No Changes Needed Inside) ---
 def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binance', timeframe='1d'):
     """Fetches crypto OHLCV data using ccxt. Returns DataFrame or None."""
     app.logger.info(f"Attempting fetch: {exchange_id} - {symbol} - {timeframe} - {start_date_str} to {end_date_str}")
     try:
+        # Using app.logger for logging within Flask context
         app.logger.info(f"Connecting to crypto exchange: {exchange_id}...")
         try:
             exchange_class = getattr(ccxt, exchange_id)
@@ -46,7 +47,7 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
                  if symbol_upper not in exchange.markets or not exchange.markets[symbol_upper].get('active', True):
                       raise ccxt.BadSymbol(f"Symbol '{symbol_upper}' not found or inactive after loading markets.")
                  else:
-                      app.logger.info(f"Symbol {symbol_upper} found but no recent candle data in initial check. Proceeding...")
+                      app.logger.info(f"Symbol {symbol_upper} found but no recent candle data. Proceeding...")
             app.logger.info(f"Symbol {symbol_upper} found and appears active on {exchange_id}.")
         except ccxt.BadSymbol as e:
              flash(f"Error: Symbol '{symbol_upper}' not found or inactive on {exchange_id}.", "error")
@@ -57,7 +58,6 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
             app.logger.error(f"Error checking symbol {symbol_upper}: {e}")
             return None
 
-        # Prepare Timestamps
         start_dt = datetime.strptime(start_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         end_dt_filter = datetime.strptime(end_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         since = int(start_dt.timestamp() * 1000)
@@ -68,7 +68,8 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
         app.logger.info(f"Fetching {timeframe} crypto OHLCV data for {symbol_upper}...")
 
         while since < end_timestamp_ms:
-            app.logger.info(f"Fetching batch since {datetime.fromtimestamp(since / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+            # Use app.logger for logging within Flask context
+            app.logger.debug(f"Fetching batch since {datetime.fromtimestamp(since / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
             try:
                 ohlcv = exchange.fetch_ohlcv(symbol_upper, timeframe, since, limit)
                 if not ohlcv: app.logger.info("No more data returned."); break
@@ -108,14 +109,15 @@ def fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id='binanc
         return df
     except Exception as e:
         flash(f"Overall error in fetch_crypto_ohlcv: {e}", "error")
-        app.logger.error(f"Overall error in fetch_crypto_ohlcv: {e}")
+        app.logger.error(f"Overall error in fetch_crypto_ohlcv: {e}", exc_info=True) # Log traceback
         return None
 
 # --- Flask Routes ---
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    app.logger.info(f"Request Method: {request.method}")
+    # Use app.logger for logging within Flask context
+    app.logger.debug(f"Request Method: {request.method} for route '/'")
     try:
         if request.method == 'POST':
             app.logger.info("Handling POST request")
@@ -134,11 +136,12 @@ def index():
             download_format = request.form.get('format', 'excel')
             app.logger.info(f"Form Data: {symbol}, {start_date_str}, {end_date_str}, {timeframe}, {download_format}")
 
-
             # --- Basic Validation ---
             errors = False
             if not exchange_id: flash("Exchange ID is required.", "error"); errors = True
-            if not symbol or "/" not in symbol: flash("Symbol is required in BASE/QUOTE format (e.g., BTC/USDT).", "error"); errors = True
+            # Slightly stricter symbol validation
+            if not symbol or "/" not in symbol or len(symbol.split('/')) != 2 or not symbol.split('/')[0] or not symbol.split('/')[1]:
+                 flash("Symbol must be in BASE/QUOTE format (e.g., BTC/USDT).", "error"); errors = True
             if not start_date_str: flash("Start Date is required.", "error"); errors = True
             if not end_date_str: flash("End Date is required.", "error"); errors = True
             if not timeframe: flash("Timeframe is required.", "error"); errors = True
@@ -150,19 +153,17 @@ def index():
 
             if errors:
                 app.logger.warning("Form validation failed.")
-                return redirect(url_for('index')) # Redirect back to form with flash messages
+                return redirect(url_for('index'))
 
             # --- Fetch data ---
             df = fetch_crypto_ohlcv(symbol, start_date_str, end_date_str, exchange_id, timeframe)
 
             # --- Prepare and Send File ---
             if df is None:
-                app.logger.error("fetch_crypto_ohlcv returned None.")
-                # Error likely already flashed by fetch function
+                app.logger.error("fetch_crypto_ohlcv returned None. Redirecting.")
                 return redirect(url_for('index'))
             elif df.empty:
-                 app.logger.warning("fetch_crypto_ohlcv returned empty DataFrame.")
-                 # Message likely already flashed by fetch function
+                 app.logger.warning("fetch_crypto_ohlcv returned empty DataFrame. Redirecting.")
                  return redirect(url_for('index'))
             else:
                 try:
@@ -177,7 +178,6 @@ def index():
                         with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
                              df.to_excel(writer, sheet_name=sheet_name, index=False)
                         output_buffer.seek(0)
-
                     elif download_format == 'txt':
                         mimetype = 'text/plain'
                         df.to_csv(output_buffer, sep='\t', index=False, encoding='utf-8', lineterminator='\n')
@@ -187,7 +187,6 @@ def index():
                          app.logger.error(f"Invalid download format: {download_format}")
                          return redirect(url_for('index'))
 
-                    # flash(f"Data fetched successfully for {symbol}. Preparing download...", "success") # Flashing before send_file doesn't work well
                     app.logger.info(f"Sending file: {filename}, mimetype: {mimetype}")
                     return send_file(
                         output_buffer,
@@ -195,18 +194,16 @@ def index():
                         as_attachment=True,
                         download_name=filename
                     )
-
                 except Exception as e:
                     flash(f"Error preparing file for download: {e}", "error")
-                    app.logger.error(f"Error preparing file: {e}")
+                    app.logger.error(f"Error preparing file: {e}", exc_info=True) # Log traceback
                     return redirect(url_for('index'))
 
         # --- Handle GET request (Display Form) ---
         elif request.method == 'GET':
             app.logger.info("Handling GET request, rendering template.")
             common_exchanges = ['binance', 'kraken', 'bybit', 'coinbase', 'kucoin', 'okx', 'gateio', 'bitget']
-            # Render the actual HTML page now
-            return render_template('index.html', exchanges=common_exchanges)
+            return render_template('index.html', exchanges=common_exchanges) # Render the HTML form
 
         # Fallback for methods other than GET/POST
         else:
@@ -216,11 +213,12 @@ def index():
     except Exception as route_exception:
         # Catch-all for any unexpected error within the route handler
         app.logger.error(f"Unhandled Exception in '/' route: {route_exception}", exc_info=True)
-        flash("An unexpected server error occurred. Please check server logs.", "error")
-        return redirect(url_for('index')) # Redirect home on general errors
+        flash("An unexpected server error occurred. Please check server logs or try again later.", "error")
+        return redirect(url_for('index'))
 
 
-# --- Run the App section (FOR LOCAL TESTING ONLY) ---
+# --- Run the App section (FOR LOCAL TESTING ONLY, NOT USED BY RENDER/GUNICORN) ---
 # if __name__ == '__main__':
 #    print("--- Running Flask App Locally for Testing ---")
+#    # Set debug=False if testing Gunicorn setup locally
 #    app.run(debug=True, host='0.0.0.0', port=5000)
